@@ -29,9 +29,9 @@ class XMLExporter(JSONExporter):
             return entry_el
 
     @classmethod
-    def export_journal(cls, journal):
+    def export_journal(cls, journal, filter):
         """Returns an XML representation of an entire journal."""
-        tags = get_tags_count(journal)
+        tags = get_tags_count(journal, filter)
         doc = minidom.Document()
         xml = doc.createElement('journal')
         tags_el = doc.createElement('tags')
@@ -42,7 +42,7 @@ class XMLExporter(JSONExporter):
             count_node = doc.createTextNode(u(tag[0]))
             tag.appendChild(count_node)
             tags_el.appendChild(tag)
-        for entry in journal.entries:
+        for entry in journal.get_filtered_entries(filter):
             entries_el.appendChild(cls.entry_to_xml(entry, doc))
         xml.appendChild(entries_el)
         xml.appendChild(tags_el)

@@ -14,6 +14,40 @@ import logging
 
 log = logging.getLogger(__name__)
 
+class Filter(object):
+    """ Contains all attributes related to querying a Journal """
+    def __init__(self, limit=None, tags=[], start_date=None, end_date=None, starred=False, strict=False, short=False):
+        self.limit = limit
+        self.tags = tags
+        self.start_date = start_date
+        self.end_date = end_date
+        self.starred = starred
+        self.strict = strict
+        self.short = short # TODO: This is out-of-place.
+
+def pprint_journal(journal, filter=Filter()):
+    """ Prettyprints the journal's entries.  This is isn't an instance method
+    because 1) It is used by Journal and by TextExporter, 2) It deals with
+    the presentation of the journal (an exporter's job)"""
+
+    filtered_entries = journal.get_filtered_entries(filter)
+
+    sep = "\n"
+    pp = sep.join([e.pprint(short=filter.short) for e in filtered_entries])
+    if journal.config['highlight']:  # highlight tags
+        if filter.tags:
+            for tag in filter.tags:
+                tagre = re.compile(re.escape(tag), re.IGNORECASE)
+                pp = re.sub(tagre,
+                            lambda match: util.colorize(match.group(0)),
+                            pp, re.UNICODE)
+        else:
+            pp = re.sub(
+                Entry.Entry.tag_regex(journal.config['tagsymbols']),
+                lambda match: util.colorize(match.group(0)),
+                pp
+            )
+    return pp
 
 class Journal(object):
     def __init__(self, name='default', **kwargs):
@@ -28,8 +62,6 @@ class Journal(object):
             'linewrap': 80,
         }
         self.config.update(kwargs)
-        # Set up date parser
-        self.search_tags = None  # Store tags we're highlighting
         self.name = name
 
     def __len__(self):
@@ -121,26 +153,7 @@ class Journal(object):
         return entries
 
     def __unicode__(self):
-        return self.pprint()
-
-    def pprint(self, short=False):
-        """Prettyprints the journal's entries"""
-        sep = "\n"
-        pp = sep.join([e.pprint(short=short) for e in self.entries])
-        if self.config['highlight']:  # highlight tags
-            if self.search_tags:
-                for tag in self.search_tags:
-                    tagre = re.compile(re.escape(tag), re.IGNORECASE)
-                    pp = re.sub(tagre,
-                                lambda match: util.colorize(match.group(0)),
-                                pp, re.UNICODE)
-            else:
-                pp = re.sub(
-                    Entry.Entry.tag_regex(self.config['tagsymbols']),
-                    lambda match: util.colorize(match.group(0)),
-                    pp
-                )
-        return pp
+        return pprint_journal(self)
 
     def __repr__(self):
         return "<Journal with {0} entries>".format(len(self.entries))
@@ -149,13 +162,8 @@ class Journal(object):
         """Sorts the Journal's entries by date"""
         self.entries = sorted(self.entries, key=lambda entry: entry.date)
 
-    def limit(self, n=None):
-        """Removes all but the last n entries"""
-        if n:
-            self.entries = self.entries[-n:]
-
-    def filter(self, tags=[], start_date=None, end_date=None, starred=False, strict=False, short=False):
-        """Removes all entries from the journal that don't match the filter.
+    def get_filtered_entries(self, filter):
+        """Returns all entries that match filter, leaving self.entries unmodified
 
         tags is a list of tags, each being a string that starts with one of the
         tag symbols defined in the config, e.g. ["@John", "#WorldDomination"].
@@ -166,34 +174,24 @@ class Journal(object):
 
         If strict is True, all tags must be present in an entry. If false, the
         entry is kept if any tag is present."""
-        self.search_tags = set([tag.lower() for tag in tags])
-        end_date = time.parse(end_date, inclusive=True)
-        start_date = time.parse(start_date)
+        search_tags = set([tag.lower() for tag in filter.tags])
+        end_date = time.parse(filter.end_date, inclusive=True)
+        start_date = time.parse(filter.start_date)
 
         # If strict mode is on, all tags have to be present in entry
-        tagged = self.search_tags.issubset if strict else self.search_tags.intersection
+        tagged = search_tags.issubset if filter.strict else search_tags.intersection
         result = [
             entry for entry in self.entries
-            if (not tags or tagged(entry.tags))
-            and (not starred or entry.starred)
-            and (not start_date or entry.date >= start_date)
-            and (not end_date or entry.date <= end_date)
+            if (not filter.tags or tagged(entry.tags))
+            and (not filter.starred or entry.starred)
+            and (not filter.start_date or entry.date >= start_date)
+            and (not filter.end_date or entry.date <= end_date)
         ]
-        if short:
-            if tags:
-                for e in self.entries:
-                    res = []
-                    for tag in tags:
-                        matches = [m for m in re.finditer(tag, e.body)]
-                        for m in matches:
-                            date = e.date.strftime(self.config['timeformat'])
-                            excerpt = e.body[m.start():min(len(e.body), m.end() + 60)]
-                            res.append('{0} {1} ..'.format(date, excerpt))
-                    e.body = "\n".join(res)
-            else:
-                for e in self.entries:
-                    e.body = ''
-        self.entries = result
+
+        if filter.limit:
+            result = result[-filter.limit:]
+
+        return result
 
     def new_entry(self, raw, date=None, sort=True):
         """Constructs a new entry from some raw text input.

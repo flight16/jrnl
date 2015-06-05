@@ -17,9 +17,9 @@ class TagExporter(TextExporter):
         return ", ".join(entry.tags)
 
     @classmethod
-    def export_journal(cls, journal):
+    def export_journal(cls, journal, filter):
         """Returns a list of tags and their frequency for an entire journal."""
-        tag_counts = get_tags_count(journal)
+        tag_counts = get_tags_count(journal, filter)
         result = ""
         if not tag_counts:
             return '[No tags found in journal.]'

@@ -54,6 +54,15 @@ def parse_args(args=None):
     return parser.parse_args(args)
 
 
+def make_filter(args):
+    return Journal.Filter(args.limit,
+                          args.text,
+                          args.start_date, args.end_date,
+                          args.starred,
+                          args.strict,
+                          args.short)
+
+
 class CommandEnum:
     READ = 1
     COMPOSE_NEW_ENTRY = 2
@@ -100,18 +109,16 @@ def do_command_list_tags(journal_name, config, original_config, args):
     log.debug("Running command 'list_tags'")
 
     journal = Journal.open_journal(journal_name, config)
-    filter_journal(journal, args)
 
-    print(util.py2encode(plugins.get_exporter("tags").export(journal)))
+    print(util.py2encode(plugins.get_exporter("tags").export(journal, make_filter(args))))
 
 
 def do_command_read(journal_name, config, original_config, args):
     log.debug("Running command 'read'")
 
     journal = Journal.open_journal(journal_name, config)
-    filter_journal(journal, args)
 
-    print(util.py2encode(journal.pprint(short=args.short)))
+    print(util.py2encode(plugins.get_exporter("text").export(journal, make_filter(args))))
 
 
 def do_command_new_entry(journal_name, config, original_config, args):
@@ -152,6 +159,7 @@ def do_command_new_entry(journal_name, config, original_config, args):
     journal.write()
 
 def do_command_edit_existing_entry(journal_name, config, original_config, args):
+    # TODO: Fix these .entries.
     log.debug("Running command 'edit existing entry'")
     journal = Journal.open_journal(journal_name, config)
 
@@ -159,15 +167,15 @@ def do_command_edit_existing_entry(journal_name, config, original_config, args):
         util.prompt("[{1}ERROR{2}: You need to specify an editor in {0} to use the --edit function.]".format(install.CONFIG_FILE_PATH, ERROR_COLOR, RESET_COLOR))
         sys.exit(1)
 
-    old_entries = journal.entries
+    all_entries = journal.entries
     filter_journal(journal, args)
-    other_entries = [e for e in old_entries if e not in journal.entries]
+    other_entries = [e for e in all_entries if e not in filtered_entries]
     # Edit
     old_num_entries = len(journal)
     edited = util.get_text_from_editor(config, journal.editable_str())
     journal.parse_editable_str(edited)
     num_deleted = old_num_entries - len(journal)
-    num_edited = len([e for e in journal.entries if e.modified])
+    num_edited = len([e for e in filtered_entries if e.modified])
     prompts = []
     if num_deleted:
         prompts.append("{0} {1} deleted".format(num_deleted, "entry" if num_deleted == 1 else "entries"))
@@ -193,10 +201,9 @@ def do_command_export(journal_name, config, original_config, args):
     log.debug("Running command 'export'")
 
     journal = Journal.open_journal(journal_name, config)
-    filter_journal(journal, args)
 
     exporter = plugins.get_exporter(args.export)
-    print(exporter.export(journal, args.output))
+    print(exporter.export(journal, make_filter(args), args.output))
 
 
 def do_command_encrypt(journal_name, config, original_config, args):
@@ -291,18 +298,6 @@ def configure_logger(debug=False):
     logging.getLogger('parsedatetime').setLevel(logging.INFO)  # disable parsedatetime debug logging
 
 
-def filter_journal(journal, args):
-    log.debug("Performing filtering...")
-
-    if args.on_date:
-        args.start_date = args.end_date = args.on_date
-    journal.filter(tags=args.text,
-                   start_date=args.start_date, end_date=args.end_date,
-                   strict=args.strict,
-                   short=args.short,
-                   starred=args.starred)
-    journal.limit(args.limit)
-
 def run(manual_args=None):
     args = parse_args(manual_args)
     configure_logger(args.debug)
@@ -340,6 +335,9 @@ def run(manual_args=None):
             args.text = args.text[1:]
         except:
             pass
+
+    if args.on_date:
+        args.start_date = args.end_date = args.on_date
 
     # Guess and execute command
     command = guess_command(args, config)

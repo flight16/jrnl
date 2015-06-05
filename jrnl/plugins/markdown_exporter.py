@@ -61,11 +61,11 @@ class MarkdownExporter(TextExporter):
         )
 
     @classmethod
-    def export_journal(cls, journal):
+    def export_journal(cls, journal, filter):
         """Returns a Markdown representation of an entire journal."""
         out = []
         year, month = -1, -1
-        for e in journal.entries:
+        for e in journal.get_filtered_entries(filter):
             if not e.date.year == year:
                 year = e.date.year
                 out.append(str(year))

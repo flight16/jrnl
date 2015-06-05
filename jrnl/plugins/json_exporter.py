@@ -31,11 +31,13 @@ class JSONExporter(TextExporter):
         return json.dumps(cls.entry_to_dict(entry), indent=2) + "\n"
 
     @classmethod
-    def export_journal(cls, journal):
+    def export_journal(cls, journal, filter):
+        filtered_entries = journal.get_filtered_entries(filter)
+
         """Returns a json representation of an entire journal."""
-        tags = get_tags_count(journal)
+        tags = get_tags_count(journal, filter)
         result = {
             "tags": dict((tag, count) for count, tag in tags),
-            "entries": [cls.entry_to_dict(e) for e in journal.entries]
+            "entries": [cls.entry_to_dict(e) for e in filtered_entries]
         }
         return json.dumps(result, indent=2)
